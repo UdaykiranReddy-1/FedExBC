@@ -40,7 +40,7 @@ transform = transforms.Compose([
 
 # Load the new dataset
 img_dir = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
-csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_2.csv"
+csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_4.csv"
 
 dataset = SkinLesionDataset(csv_file_path=csv_file, img_dir_path=img_dir, transform_comp=transform)
 
@@ -92,7 +92,7 @@ for epoch in range(num_epochs):
         running_loss += loss.item() * inputs.size(0)
 
     epoch_loss = running_loss / len(train_dataset)
-    print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}', end='\n\n')
+    print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}')
 
     # Evaluation phase
     print(f'Epoch {epoch+1}: Starting evaluation')
@@ -115,4 +115,4 @@ for epoch in range(num_epochs):
 
 
 # Save the fine-tuned model
-torch.save(model.state_dict(), "fine_tuned_2.pth")
+torch.save(model.state_dict(), "fine_tuned_4.pth")
