@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.keras.optimizers import Adam
 from evaluate import get_data_from_csv
-
+ 
 WEIGHTS_FOLDER = 'Weights'
 # Paths to fine-tuned models
 model_paths = [
