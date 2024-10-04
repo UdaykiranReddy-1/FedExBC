@@ -1,45 +1,47 @@
-import tensorflow as tf
-import numpy as np
-from tensorflow.keras.optimizers import Adam
-from evaluate import get_data_from_csv
- 
-WEIGHTS_FOLDER = 'Weights'
-# Paths to fine-tuned models
-model_paths = [
-    'fine_tuned_model_1.h5',
-    'fine_tuned_model_2.h5',
-    'fine_tuned_model_3.h5'
-    # Add more paths as needed
-]
-
-# Load all fine-tuned models
-models = [tf.keras.models.load_model(f"{WEIGHTS_FOLDER}/{model_path}") for model_path in model_paths]
-
-# Initialize a list to store the weights from each model
-model_weights = [model.get_weights() for model in models]
-
-# Average the weights across all models
-average_weights = []
-
-# Loop through each layer's weights
-for weights_tuple in zip(*model_weights):
-    # Average the weights for this layer across all models
-    layer_average = np.mean(weights_tuple, axis=0)
-    average_weights.append(layer_average)
-
-# Load one model to use as the base for the federated model
-federated_model = tf.keras.models.load_model(model_paths[0])
-
-# Set the federated (averaged) weights to the model
-federated_model.set_weights(average_weights)
-
-# Compile the federated model
-federated_model.compile(optimizer=Adam(learning_rate=1e-5),
-                        loss='sparse_categorical_crossentropy',
-                        metrics=['accuracy'])
+import os
+import torch
+from torchvision import models
 
 
-# Evaluate the federated model
-X_val, y_val = get_data_from_csv()
-loss, accuracy = federated_model.evaluate(X_val, y_val)
-print(f"Federated Model Accuracy: {accuracy * 100:.2f}%")
+def load_weights(file_path):
+    return torch.load(file_path)
+
+
+def federate_models(model, weights_list):
+    # Get the state_dict of the model as a template
+    federated_state_dict = model.state_dict()
+
+    # Initialize a dictionary to accumulate the weights
+    for key in federated_state_dict.keys():
+        federated_state_dict[key] = sum([weights[key] for weights in weights_list]) / len(weights_list)
+
+    return federated_state_dict
+
+
+def main(weights_folder, output_file):
+    # Initialize a ResNet50 model
+    model = models.resnet50()
+    num_features = model.fc.in_features
+    model.fc = torch.nn.Linear(num_features, 9)  # Adjust to the number of classes
+
+    # Get all .pth files from the weights folder
+    weights_files = [os.path.join(weights_folder, file) for file in os.listdir(weights_folder) if file.endswith('.pth')]
+
+    # Load all model weights
+    weights_list = [load_weights(file) for file in weights_files]
+
+    # Federate the weights
+    federated_weights = federate_models(model, weights_list)
+
+    # Load federated weights into the model
+    model.load_state_dict(federated_weights)
+
+    # Save the federated model
+    torch.save(model.state_dict(), output_file)
+    print(f"Federated model saved to {output_file}")
+
+
+if __name__ == "__main__":
+    weights_folder_path = "weights"  # Replace with your folder path
+    output_file_path = "federated_model.pth"
+    main(weights_folder_path, output_file_path)

@@ -1,75 +1,118 @@
-import tensorflow as tf
+import torch
+from torch.utils.data import Dataset, DataLoader, random_split
+from torchvision import transforms, models
+from PIL import Image
 import pandas as pd
-import numpy as np
-import json
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.optimizers import Adam
+import os
 
 
-PATH_TO_CSV_FILE = "../Dataset/ISIC_2019_Training_Input/split_part_2.csv"
-PATH_TO_PRETRAINED_MODEL = "../PreTraining/resnet50_pretrained_model.h5"
-PATH_TO_IMAGE_FOLDER = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
-LINE_UP = '\033[1A'
-LINE_CLEAR = '\x1b[2K'
+WEIGHTS_PATH = "../PreTraining/resnet50_skin_lesion.pth"
 
 
-# Load CSV data
-data = pd.read_csv(PATH_TO_CSV_FILE)
+# Define the custom dataset
+class SkinLesionDataset(Dataset):
+    def __init__(self, csv_file_path, img_dir_path, transform_comp=None):
+        self.data = pd.read_csv(csv_file_path)
+        self.img_dir = img_dir_path
+        self.transform = transform_comp
 
-# Load mapped class labels and process data
-with open('models.json') as json_file:
-    label_map = json.load(json_file)
-    data['label'] = data['primary_label'].map(label_map)
+    def __len__(self):
+        return len(self.data)
 
+    def __getitem__(self, idx):
+        img_name = os.path.join(self.img_dir, self.data.iloc[idx, 0] + ".jpg")
+        image = Image.open(img_name).convert("RGB")
+        img_labels = self.data.iloc[idx, 1:].values.astype('float32')
+        img_labels = torch.tensor(img_labels, dtype=torch.float32)
 
-# Split data into training and validation sets
-train_data, val_data = train_test_split(data, test_size=0.1, stratify=data['label'])
+        if self.transform:
+            image = self.transform(image)
 
-# Image data generator for preprocessing
-datagen = ImageDataGenerator(rescale=1./255, horizontal_flip=True, vertical_flip=True)
-
-
-def load_images(data_row):
-    images = []
-    img_labels = []
-    img_count = 0
-    print()
-    for _, row in data_row.iterrows():
-        img_path = f'{PATH_TO_IMAGE_FOLDER}/{row["image"]}.jpg'
-        img = tf.keras.preprocessing.image.load_img(img_path, target_size=(224, 224))
-        img = tf.keras.preprocessing.image.img_to_array(img)
-        images.append(img)
-        img_labels.append(row['label'])
-        img_count += 1
-        print(LINE_UP, end=LINE_CLEAR)
-        print(f"Pre-processing images: {img_count}")
-    print("\nImage preprocessing completed")
-    return np.array(images), np.array(img_labels)
+        return image, img_labels
 
 
-X_train, y_train = load_images(train_data)
-X_val, y_val = load_images(val_data)
+# Define the transformation (same as before)
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+# Load the new dataset
+img_dir = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
+csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_4.csv"
+
+dataset = SkinLesionDataset(csv_file_path=csv_file, img_dir_path=img_dir, transform_comp=transform)
+
+# Set a random seed for reproducibility (optional)
+torch.manual_seed(42)
+
+# Split the dataset into training and testing sets
+train_size = int(0.9 * len(dataset))  # 90% for training
+test_size = len(dataset) - train_size  # 10% for testing
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+# Create DataLoaders for training and testing
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 
-# Load the pre-trained model
-model = tf.keras.models.load_model(PATH_TO_PRETRAINED_MODEL)
+# Load the previously saved model
+model = models.resnet50()
+num_features = model.fc.in_features
+model.fc = torch.nn.Linear(num_features, 9)  # 9 classes in your dataset
+model.load_state_dict(torch.load(WEIGHTS_PATH))
 
-# Unfreeze some layers in the base model
-# Here we unfreeze the last few layers. Adjust the number of layers to unfreeze based on your requirements.
-for layer in model.layers[-30:]:  # Unfreezing the last 30 layers for fine-tuning
-    layer.trainable = True
+# Continue training
+criterion = torch.nn.BCEWithLogitsLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-# Re-compile the model with a lower learning rate for fine-tuning
-model.compile(optimizer=Adam(learning_rate=1e-5),  # Lower learning rate for fine-tuning
-              loss='sparse_categorical_crossentropy',
-              metrics=['accuracy'])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+model = model.to(device)
 
-# Train the model with the new dataset
-model.fit(datagen.flow(X_train, y_train, batch_size=32),
-          validation_data=(X_val, y_val),
-          epochs=10)
+# Fine-tune for more epochs
+num_epochs = 5  # Adjust based on your needs
+for epoch in range(num_epochs):
+    print(f'Starting Fine-Tuning Epoch {epoch+1}')
+    model.train()
+    running_loss = 0.0
+
+    print(f'Epoch {epoch+1}: Iterating through data')
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item() * inputs.size(0)
+
+    epoch_loss = running_loss / len(train_dataset)
+    print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}')
+
+    # Evaluation phase
+    print(f'Epoch {epoch+1}: Starting evaluation')
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            outputs = model(inputs)
+            predictions = torch.sigmoid(outputs) > 0.5  # Apply sigmoid and threshold
+
+            correct += (predictions == labels).sum().item()
+            total += labels.numel()
+
+    accuracy = correct / total
+    print(f'Epoch {epoch+1}/{num_epochs}, Accuracy: {accuracy:.4f}', end='\n\n')
+
 
 # Save the fine-tuned model
-model.save('fine_tuned_model_1.h5')
-
+torch.save(model.state_dict(), "fine_tuned_4.pth")

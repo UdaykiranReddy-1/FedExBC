@@ -1,1 +1,7 @@
+# Ignore Intellij files
+/.idea
+# Ignore virtual env files
+/venv
+
+# Ignore Dataset Images
 *.jpg

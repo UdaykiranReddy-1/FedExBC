@@ -1,82 +1,111 @@
-import tensorflow as tf
+import torch
+from torch.utils.data import Dataset, DataLoader, random_split
+from torchvision.models import ResNet50_Weights
+from torchvision import transforms, models
+from PIL import Image
 import pandas as pd
-import numpy as np
-import json
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
-from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Adam
+import os
 
 
-PATH_TO_CSV_FILE = "../Dataset/ISIC_2019_Training_Input/split_part_1.csv"
-PATH_TO_IMAGE_FOLDER = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
-LINE_UP = '\033[1A'
-LINE_CLEAR = '\x1b[2K'
+class SkinLesionDataset(Dataset):
+    def __init__(self, csv_file_path, img_dir_path, transform_comp=None):
+        self.data = pd.read_csv(csv_file_path)
+        self.img_dir = img_dir_path
+        self.transform = transform_comp
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img_name = os.path.join(self.img_dir, self.data.iloc[idx, 0] + ".jpg")
+        image = Image.open(img_name).convert("RGB")
+        img_labels = self.data.iloc[idx, 1:].values.astype('float32')
+        img_labels = torch.tensor(img_labels, dtype=torch.float32)
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, img_labels
 
 
-# Load CSV data
-data = pd.read_csv(PATH_TO_CSV_FILE)
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
-# Map class labels to numbers and save them
-labels = data['primary_label'].unique()
-label_map = {label: i for i, label in enumerate(labels)}
-with open('labels.json', 'w') as json_file:
-    json.dump(label_map, json_file)
-data['label'] = data['primary_label'].map(label_map)
+img_dir = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
+csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_1.csv"
 
-# Split data into training and validation sets
-train_data, val_data = train_test_split(data, test_size=0.1, stratify=data['label'])
+dataset = SkinLesionDataset(csv_file_path=csv_file, img_dir_path=img_dir, transform_comp=transform)
 
-# Image data generator for preprocessing
-datagen = ImageDataGenerator(rescale=1./255, horizontal_flip=True, vertical_flip=True)
+# Set a random seed for reproducibility (optional)
+torch.manual_seed(42)
 
+# Split the dataset into training and testing sets
+train_size = int(0.9 * len(dataset))  # 90% for training
+test_size = len(dataset) - train_size  # 10% for testing
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-def load_images(data_row):
-    images = []
-    img_labels = []
-    img_count = 0
-    print()
-    for _, row in data_row.iterrows():
-        img_path = f'{PATH_TO_IMAGE_FOLDER}/{row["image"]}.jpg'
-        img = tf.keras.preprocessing.image.load_img(img_path, target_size=(224, 224))
-        img = tf.keras.preprocessing.image.img_to_array(img)
-        images.append(img)
-        img_labels.append(row['label'])
-        img_count += 1
-        print(LINE_UP, end=LINE_CLEAR)
-        print(f"Pre-processing images: {img_count}")
-    print("\nImage preprocessing completed")
-    return np.array(images), np.array(img_labels)
+# Create DataLoaders for training and testing
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 
-X_train, y_train = load_images(train_data)
-X_val, y_val = load_images(val_data)
+# Initializing model
+model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+num_features = model.fc.in_features
+model.fc = torch.nn.Linear(num_features, 9)  # 9 classes in your dataset
+
+criterion = torch.nn.BCEWithLogitsLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+model = model.to(device)
 
 
-# Load the pre-trained ResNet50 model without the top layers
-base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+# Training loop
+num_epochs = 10
+for epoch in range(num_epochs):
+    print(f'Starting Epoch {epoch+1}')
+    model.train()
+    running_loss = 0.0
 
-# Add new layers on top of the base model
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dense(1024, activation='relu')(x)
-predictions = Dense(len(labels), activation='softmax')(x)
+    print(f'Epoch {epoch+1}: Iterating through data')
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
 
-# Create the full model
-model = Model(inputs=base_model.input, outputs=predictions)
+        optimizer.zero_grad()
 
-# Freeze the base model layers
-for layer in base_model.layers:
-    layer.trainable = False
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
-# Compile the model
-model.compile(optimizer=Adam(learning_rate=0.001), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        running_loss += loss.item() * inputs.size(0)
 
-# Train the model
-model.fit(datagen.flow(X_train, y_train, batch_size=32), validation_data=(X_val, y_val), epochs=10)
+    epoch_loss = running_loss / len(train_dataset)
+    print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}')
 
-# Save the model
-model.save('resnet50_pretrained_model.h5')
+    # Evaluation phase
+    print(f'Epoch {epoch+1}: Starting evaluation')
+    model.eval()
+    correct = 0
+    total = 0
 
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            outputs = model(inputs)
+            predictions = torch.sigmoid(outputs) > 0.5  # Apply sigmoid and threshold
+
+            correct += (predictions == labels).sum().item()
+            total += labels.numel()
+
+    accuracy = correct / total
+    print(f'Epoch {epoch+1}/{num_epochs}, Accuracy: {accuracy:.4f}', end='\n\n')
+
+
+torch.save(model.state_dict(), "resnet50_skin_lesion.pth")

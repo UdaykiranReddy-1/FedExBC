@@ -37,4 +37,5 @@ for _, split_index in splitter.split(remaining_data, remaining_data['primary_lab
 
 # Save each split to a separate CSV file
 for i, split in enumerate(splits):
+    split = split.drop('primary_label', axis=1)
     split.to_csv(f'split_part_{i + 1}.csv', index=False)
