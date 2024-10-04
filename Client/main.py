@@ -6,7 +6,7 @@ import pandas as pd
 import os
 
 
-WEIGHTS_PATH = "../PreTraining/resnet50_skin_lesion.pth"
+WEIGHTS_PATH = "federated_model.pth"
 
 
 # Define the custom dataset

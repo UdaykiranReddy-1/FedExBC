@@ -1,7 +1,6 @@
-# FedExBc 
+"# FedExBc" 
 
-In today's landscape, where concerns about data privacy are escalating alongside rapid technological advancements, the imperative for innovative solutions has never been more pronounced. Our project introduces a groundbreaking framework that tackles these urgent issues by seamlessly combining three cutting-edge technologies: Federated Learning (FL), Explainability in models, and Blockchain.
+python version - 3.10.11
 
-### Architecture
-![Architecture](https://github.com/UdaykiranReddy-1/FedExBC/blob/pytorch/Architecture.png)
-
+pytorch  version - 2.4.0, cuda version - 12.4
+( install pytorch from website, it also installs torchaudio, torchvision, numpy and pillow )
