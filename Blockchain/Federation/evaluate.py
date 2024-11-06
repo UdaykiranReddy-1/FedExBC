@@ -39,8 +39,8 @@ transform = transforms.Compose([
 ])
 
 # Load the new dataset
-img_dir = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
-csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_5.csv"
+img_dir = "../../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
+csv_file = "../../Dataset/ISIC_2019_Training_Input/split_part_5.csv"
 
 dataset = SkinLesionDataset(csv_file_path=csv_file, img_dir_path=img_dir, transform_comp=transform)
 dataset_loader = DataLoader(dataset, batch_size=32, shuffle=False)

@@ -34,8 +34,8 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-img_dir = "../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
-csv_file = "../Dataset/ISIC_2019_Training_Input/split_part_1.csv"
+img_dir = "../../Dataset/ISIC_2019_Training_Input/ISIC_2019_Training_Input"
+csv_file = "../../Dataset/ISIC_2019_Training_Input/split_part_1.csv"
 
 dataset = SkinLesionDataset(csv_file_path=csv_file, img_dir_path=img_dir, transform_comp=transform)
 
@@ -108,4 +108,4 @@ for epoch in range(num_epochs):
     print(f'Epoch {epoch+1}/{num_epochs}, Accuracy: {accuracy:.4f}', end='\n\n')
 
 
-torch.save(model.state_dict(), "resnet50_skin_lesion.pth")
+torch.save(model.state_dict(), "pre_trained_model.pth")

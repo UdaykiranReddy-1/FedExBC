@@ -6,7 +6,7 @@ import pandas as pd
 import os
 
 
-WEIGHTS_PATH = "federated_model.pth"
+WEIGHTS_PATH = "global_model.pth"
 
 
 # Define the custom dataset
@@ -115,4 +115,4 @@ for epoch in range(num_epochs):
 
 
 # Save the fine-tuned model
-torch.save(model.state_dict(), "fine_tuned_4.pth")
+torch.save(model.state_dict(), "fine_tuned_model.pth")
